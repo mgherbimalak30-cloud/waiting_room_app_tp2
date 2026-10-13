@@ -1,8 +1,16 @@
+
 import 'package:flutter/material.dart';
-import 'waiting_room_manager.dart';
+import 'package:provider/provider.dart';
+
+import 'queue_provider.dart';
 
 void main() {
-  runApp(const WaitingRoomApp());
+  runApp(
+    ChangeNotifierProvider(
+      create: (context) => QueueProvider(),
+      child: const WaitingRoomApp(),
+    ),
+  );
 }
 
 class WaitingRoomApp extends StatelessWidget {
@@ -10,8 +18,8 @@ class WaitingRoomApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      home: const WaitingRoomScreen(),
+    return const MaterialApp(
+      home: WaitingRoomScreen(),
     );
   }
 }
@@ -24,20 +32,28 @@ class WaitingRoomScreen extends StatefulWidget {
 }
 
 class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
-  final WaitingRoomManager _manager = WaitingRoomManager();
   final TextEditingController _controller = TextEditingController();
 
   void _addClient() {
-    if (_controller.text.isNotEmpty) {
-      setState(() {
-        _manager.addClient(_controller.text);
-        _controller.clear();
-      });
+    final name = _controller.text.trim();
+
+    if (name.isNotEmpty) {
+      context.read<QueueProvider>().addClient(name);
+      _controller.clear();
     }
   }
 
   @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final provider = context.watch<QueueProvider>();
+    final clients = provider.clients;
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Local Waiting Room'),
@@ -51,7 +67,10 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                 Expanded(
                   child: TextField(
                     controller: _controller,
-                    decoration: const InputDecoration(labelText: 'Client Name'),
+                    decoration: const InputDecoration(
+                      labelText: 'Client Name',
+                    ),
+                    onSubmitted: (_) => _addClient(),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -62,27 +81,47 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            Text('Clients in Queue: ${_manager.clients.length}'),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _manager.clients.length,
-                itemBuilder: (context, index) {
-                  final clientName = _manager.clients[index];
-                  return Card(
-                    child: ListTile(
-                      title: Text(clientName),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete),
-                        onPressed: () {
-                          setState(() {
-                            _manager.removeClient(clientName);
-                          });
-                        },
-                      ),
-                    ),
-                  );
-                },
+            Text('Clients in Queue: ${clients.length}'),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                key: const Key('nextClientButton'),
+                onPressed: clients.isEmpty
+                    ? null
+                    : () {
+                        context.read<QueueProvider>().nextClient();
+                      },
+                icon: const Icon(Icons.skip_next),
+                label: const Text('Next Client'),
               ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: clients.isEmpty
+                  ? const Center(
+                      child: Text('No clients in queue'),
+                    )
+                  : ListView.builder(
+                      itemCount: clients.length,
+                      itemBuilder: (context, index) {
+                        final clientName = clients[index];
+
+                        return Card(
+                          child: ListTile(
+                            title: Text(clientName),
+                            trailing: IconButton(
+                              icon: const Icon(Icons.delete),
+                              onPressed: () {
+                                context
+                                    .read<QueueProvider>()
+                                    .removeClient(clientName);
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
