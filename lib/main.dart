@@ -1,10 +1,21 @@
 
 import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 import 'queue_provider.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  await dotenv.load(fileName: '.env');
+
+await Supabase.initialize(
+  url: dotenv.env['SUPABASE_URL']!,
+  publishableKey: dotenv.env['SUPABASE_ANON_KEY']!,
+);
+
   runApp(
     ChangeNotifierProvider(
       create: (context) => QueueProvider(),
@@ -18,8 +29,13 @@ class WaitingRoomApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const MaterialApp(
-      home: WaitingRoomScreen(),
+    return MaterialApp(
+      title: 'Waiting Room',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        useMaterial3: true,
+      ),
+      home: const WaitingRoomScreen(),
     );
   }
 }
@@ -34,12 +50,14 @@ class WaitingRoomScreen extends StatefulWidget {
 class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
   final TextEditingController _controller = TextEditingController();
 
-  void _addClient() {
+  Future<void> _addClient() async {
     final name = _controller.text.trim();
 
     if (name.isNotEmpty) {
-      context.read<QueueProvider>().addClient(name);
-      _controller.clear();
+      await context.read<QueueProvider>().addClient(name);
+      if (mounted) {
+        _controller.clear();
+      }
     }
   }
 
@@ -56,10 +74,10 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Local Waiting Room'),
+        title: const Text('Real-Time Waiting Room'),
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             Row(
@@ -69,6 +87,7 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                     controller: _controller,
                     decoration: const InputDecoration(
                       labelText: 'Client Name',
+                      border: OutlineInputBorder(),
                     ),
                     onSubmitted: (_) => _addClient(),
                   ),
@@ -105,17 +124,20 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                   : ListView.builder(
                       itemCount: clients.length,
                       itemBuilder: (context, index) {
-                        final clientName = clients[index];
+                        final client = clients[index];
 
                         return Card(
                           child: ListTile(
-                            title: Text(clientName),
+                            title: Text(client.name),
+                            subtitle: Text(
+                              'Added: ${client.createdAt.toLocal()}',
+                            ),
                             trailing: IconButton(
                               icon: const Icon(Icons.delete),
                               onPressed: () {
                                 context
                                     .read<QueueProvider>()
-                                    .removeClient(clientName);
+                                    .removeClient(client.id);
                               },
                             ),
                           ),
