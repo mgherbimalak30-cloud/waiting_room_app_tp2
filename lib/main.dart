@@ -1,8 +1,35 @@
-import 'package:flutter/material.dart';
-import 'waiting_room_manager.dart';
 
-void main() {
-  runApp(const WaitingRoomApp());
+import 'package:flutter/material.dart';
+import 'package:flutter_dotenv/flutter_dotenv.dart';
+import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter/foundation.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'queue_provider.dart';
+
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+ if (!kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.windows ||
+     defaultTargetPlatform == TargetPlatform.linux ||
+     defaultTargetPlatform == TargetPlatform.macOS)) {
+  sqfliteFfiInit();
+  databaseFactory = databaseFactoryFfi;
+}
+
+  await dotenv.load(fileName: '.env');
+
+await Supabase.initialize(
+  url: dotenv.env['SUPABASE_URL']!,
+  publishableKey: dotenv.env['SUPABASE_ANON_KEY']!,
+);
+
+  runApp(
+    ChangeNotifierProvider(
+      create: (context) => QueueProvider(),
+      child: const WaitingRoomApp(),
+    ),
+  );
 }
 
 class WaitingRoomApp extends StatelessWidget {
@@ -11,6 +38,11 @@ class WaitingRoomApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
+      title: 'Waiting Room',
+      theme: ThemeData(
+        colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
+        useMaterial3: true,
+      ),
       home: const WaitingRoomScreen(),
     );
   }
@@ -24,26 +56,36 @@ class WaitingRoomScreen extends StatefulWidget {
 }
 
 class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
-  final WaitingRoomManager _manager = WaitingRoomManager();
   final TextEditingController _controller = TextEditingController();
 
-  void _addClient() {
-    if (_controller.text.isNotEmpty) {
-      setState(() {
-        _manager.addClient(_controller.text);
+  Future<void> _addClient() async {
+    final name = _controller.text.trim();
+
+    if (name.isNotEmpty) {
+      await context.read<QueueProvider>().addClient(name);
+      if (mounted) {
         _controller.clear();
-      });
+      }
     }
   }
 
   @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final provider = context.watch<QueueProvider>();
+    final clients = provider.clients;
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Local Waiting Room'),
+        title: const Text('Real-Time Waiting Room'),
       ),
       body: Padding(
-        padding: const EdgeInsets.all(16.0),
+        padding: const EdgeInsets.all(16),
         child: Column(
           children: [
             Row(
@@ -51,7 +93,11 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                 Expanded(
                   child: TextField(
                     controller: _controller,
-                    decoration: const InputDecoration(labelText: 'Client Name'),
+                    decoration: const InputDecoration(
+                      labelText: 'Client Name',
+                      border: OutlineInputBorder(),
+                    ),
+                    onSubmitted: (_) => _addClient(),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -62,27 +108,51 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            Text('Clients in Queue: ${_manager.clients.length}'),
-            Expanded(
-              child: ListView.builder(
-                itemCount: _manager.clients.length,
-                itemBuilder: (context, index) {
-                  final clientName = _manager.clients[index];
-                  return Card(
-                    child: ListTile(
-                      title: Text(clientName),
-                      trailing: IconButton(
-                        icon: const Icon(Icons.delete),
-                        onPressed: () {
-                          setState(() {
-                            _manager.removeClient(clientName);
-                          });
-                        },
-                      ),
-                    ),
-                  );
-                },
+            Text('Clients in Queue: ${clients.length}'),
+            const SizedBox(height: 8),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                key: const Key('nextClientButton'),
+                onPressed: clients.isEmpty
+                    ? null
+                    : () {
+                        context.read<QueueProvider>().nextClient();
+                      },
+                icon: const Icon(Icons.skip_next),
+                label: const Text('Next Client'),
               ),
+            ),
+            const SizedBox(height: 8),
+            Expanded(
+              child: clients.isEmpty
+                  ? const Center(
+                      child: Text('No clients in queue'),
+                    )
+                  : ListView.builder(
+                      itemCount: clients.length,
+                      itemBuilder: (context, index) {
+                        final client = clients[index];
+
+                        return Card(
+                          child: ListTile(
+                            title: Text(client.name),
+                            subtitle: Text(
+                                  'Added: ${client.createdAt.toLocal()}\n'
+                                  '${client.lat == null ? '📍 Location not captured' : '📍 ${client.lat!.toStringAsFixed(4)}, ${client.lng!.toStringAsFixed(4)}'}',
+                                ),   
+                            trailing: IconButton(
+                              icon: const Icon(Icons.delete),
+                              onPressed: () {
+                                context
+                                    .read<QueueProvider>()
+                                    .removeClient(client.id);
+                              },
+                            ),
+                          ),
+                        );
+                      },
+                    ),
             ),
           ],
         ),
