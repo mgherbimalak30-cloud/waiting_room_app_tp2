@@ -3,11 +3,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_dotenv/flutter_dotenv.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'package:flutter/foundation.dart';
+import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'queue_provider.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+ if (!kIsWeb &&
+    (defaultTargetPlatform == TargetPlatform.windows ||
+     defaultTargetPlatform == TargetPlatform.linux ||
+     defaultTargetPlatform == TargetPlatform.macOS)) {
+  sqfliteFfiInit();
+  databaseFactory = databaseFactoryFfi;
+}
 
   await dotenv.load(fileName: '.env');
 
@@ -130,8 +138,9 @@ class _WaitingRoomScreenState extends State<WaitingRoomScreen> {
                           child: ListTile(
                             title: Text(client.name),
                             subtitle: Text(
-                              'Added: ${client.createdAt.toLocal()}',
-                            ),
+                                  'Added: ${client.createdAt.toLocal()}\n'
+                                  '${client.lat == null ? '📍 Location not captured' : '📍 ${client.lat!.toStringAsFixed(4)}, ${client.lng!.toStringAsFixed(4)}'}',
+                                ),   
                             trailing: IconButton(
                               icon: const Icon(Icons.delete),
                               onPressed: () {
